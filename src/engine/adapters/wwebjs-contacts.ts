@@ -51,15 +51,21 @@ export async function readLeanContacts(): Promise<LeanContact[]> {
   const models = w.require('WAWebCollections').Contact.getModelsArray();
   const out: LeanContact[] = [];
   for (let i = 0; i < models.length; i++) {
-    const m = w.WWebJS.getContactModel(models[i]);
-    out.push({
-      id: m.id,
-      name: m.name,
-      pushname: m.pushname,
-      number: m.userid,
-      isMyContact: m.isMyContact,
-      isBlocked: m.isBlocked,
-    });
+    try {
+      const m = w.WWebJS.getContactModel(models[i]);
+      out.push({
+        id: m.id,
+        name: m.name,
+        pushname: m.pushname,
+        number: m.userid,
+        isMyContact: m.isMyContact,
+        isBlocked: m.isBlocked,
+      });
+    } catch {
+      // Some WA Web builds throw for deviceWid/@lid entries (for example
+      // `getAlternateUserWid - Invalid get call using deviceWid`). One bad contact must not make
+      // the whole address book unreadable; skip it and let the outer mapping/logging handle the rest.
+    }
     // Yield every 256 contacts so the getState() liveness probe can interleave (#1501);
     // raise the stride if the read ever gets too chatty on a very large address book.
     if ((i & 0xff) === 0xff) await new Promise(resolve => setTimeout(resolve));

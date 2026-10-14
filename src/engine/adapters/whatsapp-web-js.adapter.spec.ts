@@ -5795,6 +5795,60 @@ describe('WhatsAppWebJsAdapter page transport error detection (wedged page fast-
     expect(evaluate).toHaveBeenCalledTimes(1);
   });
 
+  it('skips an in-page getContactModel failure and returns the valid contacts', async () => {
+    const windowHost = globalThis as unknown as { window?: unknown };
+    const previousWindow = windowHost.window;
+    const models = [{ key: 'good-1' }, { key: 'bad-devicewid' }, { key: 'good-2' }];
+    const contactModels = new Map<unknown, unknown>([
+      [
+        models[0],
+        {
+          id: { _serialized: '111@c.us' },
+          name: 'Alice',
+          pushname: 'Ally',
+          userid: '111',
+          isMyContact: true,
+          isBlocked: false,
+        },
+      ],
+      [
+        models[2],
+        {
+          id: { $1: '222@c.us' },
+          name: 'Bob',
+          pushname: 'Bobby',
+          userid: '222',
+          isMyContact: false,
+          isBlocked: true,
+        },
+      ],
+    ]);
+    const getContactModel = jest.fn((model: unknown) => {
+      if (model === models[1]) {
+        throw new Error('getAlternateUserWid - Invalid get call using deviceWid');
+      }
+      return contactModels.get(model);
+    });
+    const evaluate = jest.fn(async (fn: () => Promise<unknown>) => {
+      windowHost.window = {
+        require: () => ({ Contact: { getModelsArray: () => models } }),
+        WWebJS: { getContactModel },
+      };
+      try {
+        return await fn();
+      } finally {
+        windowHost.window = previousWindow;
+      }
+    });
+    const { adapter } = readyAdapter({ pupPage: { evaluate } });
+
+    await expect(adapter.getContacts()).resolves.toEqual([
+      { id: '111@c.us', name: 'Alice', pushName: 'Ally', number: '111', isMyContact: true, isBlocked: false },
+      { id: '222@c.us', name: 'Bob', pushName: 'Bobby', number: '222', isMyContact: false, isBlocked: true },
+    ]);
+    expect(getContactModel).toHaveBeenCalledTimes(3);
+  });
+
   // #1476: an entry with no readable wid under either name (a shape wwebjs itself sometimes returns)
   // must not reject the whole address book — it is dropped and counted instead.
   it('skips a contact with no readable id and counts it in the warn log, keeping the rest', async () => {
